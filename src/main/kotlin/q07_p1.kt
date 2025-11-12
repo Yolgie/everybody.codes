@@ -8,9 +8,20 @@ private data class TestCase(val input: String, val parameters: Map<String, Strin
 private val testCases = listOf<TestCase>(
     TestCase(
         input = """
-                    ABabACacBCbca
+Oronris,Urakris,Oroneth,Uraketh
+
+r > a,i,o
+i > p,w
+n > e,r
+o > n,m
+k > f,r
+a > k
+U > r
+e > t
+O > r
+t > h
                 """,
-        expectedOutput = "14"
+        expectedOutput = "Oroneth"
     ),
 )
 
@@ -33,5 +44,12 @@ fun main() {
 }
 
 private fun solve(input: String, parameters: Map<String, String>? = null): String {
-    TODO()
+    val inputLines = input.lines()
+    val names = inputLines.first().split(",")
+    val rules = input.lines().drop(1).filter { it.isNotBlank() }.map { it.split(">") }.map { it.first().trim().first() to it.last().split(",").map { it.trim().first() }}.toMap()
+
+    println("names = $names")
+    println("rules = $rules")
+
+    return names.filter { name -> name.zipWithNext().all { (first, second) -> rules[first]?.contains(second) ?: false }}.first()
 }
