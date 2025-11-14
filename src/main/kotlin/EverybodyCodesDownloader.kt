@@ -1,16 +1,23 @@
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.nio.charset.StandardCharsets
-import java.util.Properties
+import java.util.*
 import javax.crypto.Cipher
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import kotlinx.serialization.*
-import kotlinx.serialization.json.*
 
 @Serializable
-data class UserMe(val seed: Int)
+private data class UserMe(val seed: Int)
+
+@Serializable
+private data class SubmitPayload(val answer: String)
 
 class EverybodyCodesDownloader(
     private val event: String,
@@ -68,6 +75,17 @@ class EverybodyCodesDownloader(
         return decrypted
     }
 
+    /** Submit an answer for this event/quest/part. Returns the server JSON response. */
+    fun submit(answer: String): JsonObject {
+        val url = "https://everybody.codes/api/event/$event/quest/$quest/part/$part/answer"
+        val payload = json.encodeToString(SubmitPayload(answer))
+        val resp = postJson(url, payload)
+        val obj = json.parseToJsonElement(resp).jsonObject
+        println("📨 Submitted answer for e=$event q=$quest p=$part")
+        println("↳ Server response: $obj")
+        return obj
+    }
+
     // --- caching helpers ---
     private fun getCachedSeed(): Int {
         val seedFile = File(baseDir, "UserMe.json")
@@ -119,6 +137,25 @@ class EverybodyCodesDownloader(
         conn.inputStream.bufferedReader().use { return it.readText() }
     }
 
+    private fun postJson(urlStr: String, body: String): String {
+        val conn = URI(urlStr).toURL().openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.setRequestProperty("Cookie", cookie)
+        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+
+        val status = runCatching { conn.responseCode }.getOrDefault(-1)
+        val response = runCatching {
+            (conn.inputStream ?: conn.errorStream)?.bufferedReader()?.use { it.readText() }
+        }.getOrNull() ?: "<no response>"
+
+        if (status !in 200..299) {
+            throw IllegalStateException("Submit failed (HTTP $status): $response")
+        }
+        return response
+    }
+
     // --- helpers ---
     private fun loadCookie(): String {
         val props = Properties()
@@ -139,7 +176,6 @@ class EverybodyCodesDownloader(
         val encryptedBytes = encryptedHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
         val keyBytes = key.toByteArray(StandardCharsets.UTF_8)
         val ivBytes = key.substring(0, 16).toByteArray(StandardCharsets.UTF_8)
-
         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keyBytes, "AES"), IvParameterSpec(ivBytes))
         return String(cipher.doFinal(encryptedBytes), StandardCharsets.UTF_8)
@@ -147,7 +183,8 @@ class EverybodyCodesDownloader(
 }
 
 fun main() {
-    val downloader = EverybodyCodesDownloader("2025", 1, 1)
-    downloader.forceDownload()   // overwrite seed + encrypted input
-    println(downloader.getInput())
+    val downloader = EverybodyCodesDownloader("2025", 1, 3)
+    downloader.download()
+    val input = downloader.getInput()
+    downloader.submit("Shaelluth")
 }
